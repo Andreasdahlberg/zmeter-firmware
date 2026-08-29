@@ -53,3 +53,16 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+*.bin
+*.log
+managed_components/
+dependencies.lock
+
+# Misc
+.vscode/
+.cache
