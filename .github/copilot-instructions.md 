@@ -1,0 +1,122 @@
+# Project Instructions
+
+This is a modern embedded C project using ESP-IDF.
+
+## Priorities
+
+Prioritize, in order:
+
+1. Correctness and reliability
+2. Readability and maintainability
+3. Testability
+4. Resource efficiency
+
+Prefer simple, explicit code over clever abstractions. Make the smallest coherent change required and avoid unrelated refactoring.
+
+## C
+
+- Use C, not C++.
+- Follow existing project conventions and `.clang-format`.
+- Use 4-space indentation and Allman braces.
+- Use fixed-width integer types when width matters.
+- Use `size_t` for sizes and indexes where appropriate.
+- Prefer `static`, `const`, `enum`, and functions over unnecessary macros.
+- Avoid magic numbers and unsafe/unbounded string functions.
+- Keep functions small and focused.
+- Preserve const-correctness.
+- Check bounds before accessing buffers.
+- Use #pragma once as include guard.
+- Use assert() to check preconditions, like pointers allocated statically by caller.
+
+## ESP-IDF
+
+- Prefer ESP-IDF APIs over custom implementations.
+- Use APIs appropriate for the project's ESP-IDF version; avoid deprecated APIs.
+- Use `esp_err_t` for operations that can fail.
+- Never silently ignore meaningful error returns.
+- Use `ESP_ERROR_CHECK()` only when failure is unrecoverable.
+- Use ESP-IDF logging (`ESP_LOGE/W/I/D`) with useful context.
+- Use ESP-IDF/FreeRTOS primitives rather than custom synchronization or scheduling.
+
+Do not invent ESP-IDF APIs. Check ESP-IDF documentation via MCP when uncertain.
+
+## Embedded Reliability
+
+Always consider:
+
+- allocation failures
+- invalid or malformed input
+- timeouts and communication failures
+- peripheral/hardware failure
+- initialization and reset behavior
+- buffer sizes and integer ranges
+- resource ownership and lifetime
+- concurrency and race conditions
+
+Avoid unnecessary dynamic allocation, especially in periodic or time-critical paths.
+
+Keep ISRs short and non-blocking. Use only ISR-safe APIs and defer processing to tasks.
+
+Do not disable watchdogs to hide blocking or timing problems.
+
+## Architecture
+
+Follow the existing architecture before introducing new patterns.
+
+Keep hardware access separate from application logic where practical and useful for testing.
+
+Avoid unnecessary global mutable state.
+
+For stateful systems, prefer explicit state machines over collections of loosely related boolean flags.
+
+Keep component public APIs small. Do not expose implementation details unnecessarily.
+
+## Testing
+
+Use the project's existing test infrastructure, preferably Unity/CMock for unit tests.
+
+New behavior should be testable where practical.
+
+Test important:
+
+- normal behavior
+- boundary conditions
+- invalid input
+- error paths
+- state transitions
+
+Separate pure/application logic from hardware access when doing so makes meaningful unit testing possible.
+
+## Planning
+
+For non-trivial changes, create and maintain the implementation plan in `doc/PLAN.md`.
+
+Before implementing a non-trivial change:
+
+1. Inspect the relevant code.
+2. Search for similar implementations.
+3. Understand dependencies and execution context.
+4. Update `doc/PLAN.md` with the planned approach.
+
+Keep the plan concise and actionable. Update it as implementation progresses.
+
+## Making Changes
+
+During implementation:
+
+- Make focused changes.
+- Preserve existing behavior unless explicitly changing it.
+- Do not refactor unrelated code.
+- Do not modify generated files.
+- Update tests when behavior changes.
+
+Before declaring completion:
+
+1. Review the diff.
+2. Build the project.
+3. Run relevant tests.
+4. Check error paths and resource ownership.
+5. Update `doc/PLAN.md` to reflect completed work.
+6. Report anything that could not be verified.
+
+Never claim that a build or test succeeded unless it was actually run successfully.
