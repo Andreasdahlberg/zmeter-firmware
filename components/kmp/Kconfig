@@ -1,0 +1,19 @@
+
+config KMP_UART_PORT_NUM
+    int "UART port number"
+    range 0 1
+    default 1
+    help
+        UART communication port number for the KMP interface.
+
+config KMP_UART_RXD
+    int "UART RXD pin number"
+    default 0
+    help
+        GPIO number for UART RX pin.
+
+config KMP_UART_TXD
+    int "UART TXD pin number"
+    default 1
+    help
+        GPIO number for UART TX pin.
