@@ -1,0 +1,66 @@
+---
+Language: C
+
+# Indentation
+IndentWidth: 4
+UseTab: Never
+TabWidth: 4
+
+# Braces
+BreakBeforeBraces: Allman
+
+BraceWrapping:
+  AfterFunction: true
+  AfterStruct: true
+  AfterEnum: true
+  AfterUnion: true
+  AfterControlStatement: Always
+  BeforeElse: true
+  BeforeCatch: true
+
+# Switch statements
+IndentCaseLabels: true
+
+# Pointer style
+# Match:
+#     struct foo *bar;
+#     const char *name;
+PointerAlignment: Right
+ReferenceAlignment: Right
+DerivePointerAlignment: false
+
+# Line length
+ColumnLimit: 120
+
+# Functions
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Arguments
+BinPackArguments: false
+BinPackParameters: false
+
+# Keep declarations readable
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+
+# Includes
+SortIncludes: false
+
+# Empty lines
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# C style
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+
+# Don't merge simple statements
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+
+# Comments
+ReflowComments: false
+
+...
