@@ -106,6 +106,7 @@ kmp_parse_result_t kmp_parser_process(kmp_parser_t *parser, const uint8_t *data,
 
                 if (!is_stuffable(decoded))
                 {
+                    //TODO: Correct to abort here?
                     reset_parser(parser);
                     return KMP_PARSE_INVALID;
                 }
@@ -130,6 +131,23 @@ kmp_parse_result_t kmp_parser_process(kmp_parser_t *parser, const uint8_t *data,
     }
 
     return KMP_PARSE_INCOMPLETE;
+}
+
+const char *kmp_parse_result_to_string(kmp_parse_result_t result)
+{
+    switch (result)
+    {
+        case KMP_PARSE_INCOMPLETE:
+            return "INCOMPLETE";
+        case KMP_PARSE_FRAME_READY:
+            return "FRAME_READY";
+        case KMP_PARSE_INVALID:
+            return "INVALID";
+        case KMP_PARSE_TOO_LARGE:
+            return "TOO_LARGE";
+        default:
+            return "UNKNOWN";
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

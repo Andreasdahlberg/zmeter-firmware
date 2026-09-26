@@ -66,3 +66,11 @@ void kmp_parser_init(kmp_parser_t *parser, uint8_t *buffer, size_t capacity);
  * @return The result of the parsing operation (e.g., KMP_PARSE_FRAME_READY, KMP_PARSE_INVALID).
  */
 kmp_parse_result_t kmp_parser_process(kmp_parser_t *parser, const uint8_t *data, size_t length, size_t *consumed);
+
+/**
+ * @brief Converts a kmp_parse_result_t to a human-readable string.
+ *
+ * @param result The parse result to convert.
+ * @return A pointer to a static string representing the result.
+ */
+const char *kmp_parse_result_to_string(kmp_parse_result_t result);
