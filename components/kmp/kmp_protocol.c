@@ -3,6 +3,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "kmp_protocol.h"
 
@@ -24,11 +27,13 @@
 //LOCAL FUNCTION PROTOTYPES
 ///////////////////////////////////////////////////////////////////////////////
 
+static uint16_t crc16_update(uint16_t crc, uint8_t byte);
 static uint16_t crc16(const uint8_t *data, size_t length);
 static inline bool is_stuffable(uint8_t byte);
 static inline void reset_parser(kmp_parser_t *parser);
 static inline bool append_byte(kmp_parser_t *parser, uint8_t byte);
 static inline bool verify_crc(const kmp_parser_t *parser);
+static bool add_stuffed_byte(uint8_t *output, size_t capacity, size_t *length, uint8_t byte);
 
 ///////////////////////////////////////////////////////////////////////////////
 //FUNCTIONS
@@ -106,7 +111,6 @@ kmp_parse_result_t kmp_parser_process(kmp_parser_t *parser, const uint8_t *data,
 
                 if (!is_stuffable(decoded))
                 {
-                    //TODO: Correct to abort here?
                     reset_parser(parser);
                     return KMP_PARSE_INVALID;
                 }
@@ -150,6 +154,57 @@ const char *kmp_parse_result_to_string(kmp_parse_result_t result)
     }
 }
 
+kmp_encode_result_t kmp_frame_encode(destination_address_t destination,
+                                     const uint8_t *input,
+                                     size_t input_length,
+                                     uint8_t *output,
+                                     size_t capacity,
+                                     size_t *output_length)
+{
+    assert(input != NULL);
+    assert(output != NULL);
+    assert(output_length != NULL);
+
+    size_t i = 0;
+
+    if (i >= capacity)
+    {
+        return KMP_ENCODE_TOO_LARGE;
+    }
+    output[i++] = KMP_CODE_START_TO_METER;
+
+    uint16_t crc = crc16_update(0x0000, (uint8_t)destination);
+    if (!add_stuffed_byte(output, capacity, &i, (uint8_t)destination))
+    {
+        return KMP_ENCODE_TOO_LARGE;
+    }
+
+    for (size_t j = 0; j < input_length; ++j)
+    {
+        crc = crc16_update(crc, input[j]);
+        if (!add_stuffed_byte(output, capacity, &i, input[j]))
+        {
+            return KMP_ENCODE_TOO_LARGE;
+        }
+    }
+
+    // MSB first
+    if (!add_stuffed_byte(output, capacity, &i, (uint8_t)(crc >> 8)) ||
+        !add_stuffed_byte(output, capacity, &i, (uint8_t)(crc & 0xFF)))
+    {
+        return KMP_ENCODE_TOO_LARGE;
+    }
+
+    if (i >= capacity)
+    {
+        return KMP_ENCODE_TOO_LARGE;
+    }
+
+    output[i++] = KMP_CODE_STOP;
+    *output_length = i;
+    return KMP_ENCODE_OK;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //LOCAL FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////
@@ -171,24 +226,34 @@ static inline bool append_byte(kmp_parser_t *parser, uint8_t byte)
     return true;
 }
 
+static uint16_t crc16_update(uint16_t crc, uint8_t byte)
+{
+    crc ^= (uint16_t)byte << 8;
+
+    for (int j = 0; j < 8; ++j)
+    {
+        if (crc & 0x8000)
+        {
+            crc = (crc << 1) ^ 0x1021;
+        }
+        else
+        {
+            crc <<= 1;
+        }
+    }
+
+    return crc;
+}
+
 static uint16_t crc16(const uint8_t *data, size_t length)
 {
     uint16_t crc = 0x0000;
+
     for (size_t i = 0; i < length; ++i)
     {
-        crc ^= (uint16_t)data[i] << 8;
-        for (int j = 0; j < 8; j++)
-        {
-            if (crc & 0x8000)
-            {
-                crc = (crc << 1) ^ 0x1021;
-            }
-            else
-            {
-                crc <<= 1;
-            }
-        }
+        crc = crc16_update(crc, data[i]);
     }
+
     return crc;
 }
 
@@ -220,4 +285,30 @@ static inline bool verify_crc(const kmp_parser_t *parser)
         ((uint16_t)parser->buffer[parser->length - 2] << 8) | parser->buffer[parser->length - 1];
 
     return calculated_crc == received_crc;
+}
+
+static bool add_stuffed_byte(uint8_t *output, size_t capacity, size_t *length, uint8_t byte)
+{
+    if (is_stuffable(byte))
+    {
+        // Check if the output buffer has room for a stuffed byte
+        if (*length + 2 > capacity)
+        {
+            return false;
+        }
+
+        output[(*length)++] = KMP_CODE_STUFFING;
+        output[(*length)++] = byte ^ 0xFF;
+    }
+    else
+    {
+        if (*length >= capacity)
+        {
+            return false;
+        }
+
+        output[(*length)++] = byte;
+    }
+
+    return true;
 }

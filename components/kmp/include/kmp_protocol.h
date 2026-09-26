@@ -44,6 +44,19 @@ typedef struct
     kmp_state_t state;
 } kmp_parser_t;
 
+typedef enum
+{
+    KMP_ENCODE_OK,
+    KMP_ENCODE_TOO_LARGE,
+} kmp_encode_result_t;
+
+typedef enum
+{
+    HEAT_METER = 0x3F,
+    LOGGER_TOP = 0x7F,
+    LOGGER_BASE = 0xBF,
+} destination_address_t;
+
 ///////////////////////////////////////////////////////////////////////////////
 //FUNCTION PROTOTYPES
 ///////////////////////////////////////////////////////////////////////////////
@@ -74,3 +87,11 @@ kmp_parse_result_t kmp_parser_process(kmp_parser_t *parser, const uint8_t *data,
  * @return A pointer to a static string representing the result.
  */
 const char *kmp_parse_result_to_string(kmp_parse_result_t result);
+
+
+kmp_encode_result_t kmp_frame_encode(destination_address_t destination,
+                                     const uint8_t *input,
+                                     size_t input_length,
+                                     uint8_t *output,
+                                     size_t capacity,
+                                     size_t *output_length);
