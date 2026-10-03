@@ -274,15 +274,15 @@ static inline bool is_stuffable(uint8_t byte)
 
 static inline bool verify_crc(const kmp_parser_t *parser)
 {
-    // Minimum: 1 destination byte + 2 CRC bytes
-    if (parser->length < 3)
+    // Minimum: destination + application + CRC16
+    if (parser->length < 4)
     {
         return false;
     }
 
     const uint16_t calculated_crc = crc16(parser->buffer, parser->length - 2);
     const uint16_t received_crc =
-        ((uint16_t)parser->buffer[parser->length - 2] << 8) | parser->buffer[parser->length - 1];
+        (uint16_t)(((uint16_t)parser->buffer[parser->length - 2] << 8) | parser->buffer[parser->length - 1]);
 
     return calculated_crc == received_crc;
 }

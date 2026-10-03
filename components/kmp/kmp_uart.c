@@ -81,6 +81,7 @@ kmp_uart_read(const kmp_uart_t *handle, uint8_t *data, size_t capacity, size_t *
 {
     assert(handle != NULL);
     assert(data != NULL);
+    assert(bytes_read);
 
     int result = uart_read_bytes(handle->port, data, capacity, pdMS_TO_TICKS(timeout_ms));
     if (result < 0)
