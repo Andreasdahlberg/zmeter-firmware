@@ -18,7 +18,7 @@
 //DEFINES
 ///////////////////////////////////////////////////////////////////////////////
 
-#define RX_TIMEOUT_MS 2000
+#define RX_TIMEOUT_MS 1000
 #define SERIAL_LENGTH 8
 
 #define KMP_SI_SIGN 0x80
@@ -205,6 +205,7 @@ const kmp_register_info_t register_info_table[] = {
 //LOCAL FUNCTION PROTOTYPES
 ///////////////////////////////////////////////////////////////////////////////
 
+static esp_err_t parse_register(const uint8_t *data, size_t data_length, kmp_register_t *reg, size_t *consumed);
 static esp_err_t read_register(kmp_client_t *client, kmp_register_id_t register_id, kmp_register_t *reg);
 static bool register_to_uint32(const kmp_register_t *reg, uint32_t *value);
 static bool register_to_int32(const kmp_register_t *reg, int32_t *value);
@@ -356,6 +357,43 @@ esp_err_t kmp_client_get_register_float(kmp_client_t *client, kmp_register_id_t 
 //LOCAL FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////
 
+static esp_err_t parse_register(const uint8_t *data, size_t data_length, kmp_register_t *reg, size_t *consumed)
+{
+    assert(data != NULL);
+    assert(reg != NULL);
+    assert(consumed != NULL);
+
+    *consumed = 0;
+
+    if (data_length < 5)
+    {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    reg->id = (uint16_t)(((uint16_t)data[0] << 8) | (uint16_t)data[1]);
+    reg->unit = data[2];
+    reg->length = data[3];
+    reg->si_ex = data[4];
+
+    if (reg->length > sizeof(reg->value))
+    {
+        ESP_LOGE(TAG, "Register %u value too large: %u", reg->id, reg->length);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    if (data_length < 5 + reg->length)
+    {
+        ESP_LOGE(TAG, "Register %u value truncated: expected=%u available=%zu", reg->id, reg->length, data_length - 5);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    memcpy(reg->value, &data[5], reg->length);
+
+    *consumed = 5 + reg->length;
+
+    return ESP_OK;
+}
+
 static esp_err_t read_register(kmp_client_t *client, kmp_register_id_t register_id, kmp_register_t *reg)
 {
     assert(client != NULL);
@@ -378,8 +416,8 @@ static esp_err_t read_register(kmp_client_t *client, kmp_register_id_t register_
         return ESP_FAIL;
     }
 
-    // Destination address + CID + 9 data bytes
-    if (response_length != 11)
+    // Destination address + CID
+    if (response_length < 2)
     {
         ESP_LOGE(TAG, "Invalid GET_REGISTER response length: %zu", response_length);
         return ESP_ERR_INVALID_RESPONSE;
@@ -391,23 +429,8 @@ static esp_err_t read_register(kmp_client_t *client, kmp_register_id_t register_
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    reg->id = (uint16_t)((response[2] << 8) | (uint16_t)response[3]);
-    if (reg->id != register_info.id)
-    {
-        ESP_LOGE(TAG, "Unexpected register ID in response: %u != %u", (uint32_t)register_id, (uint32_t)reg->id);
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-    reg->unit = response[4];
-    reg->length = response[5];
-    reg->si_ex = response[6];
-    if (reg->length > sizeof(reg->value))
-    {
-        ESP_LOGE(TAG, "Value length to large: max=%zu actual=%u", sizeof(reg->value), reg->length);
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-    memcpy(reg->value, &response[7], reg->length);
-
-    return ESP_OK;
+    size_t consumed;
+    return parse_register(&response[2], response_length - 2, reg, &consumed);
 }
 
 static bool register_to_uint32(const kmp_register_t *reg, uint32_t *value)
