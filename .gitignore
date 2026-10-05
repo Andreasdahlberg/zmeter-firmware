@@ -66,3 +66,4 @@ dependencies.lock
 # Misc
 .vscode/
 .cache
+build_host/

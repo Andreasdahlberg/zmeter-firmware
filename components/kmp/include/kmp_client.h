@@ -14,21 +14,16 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * @brief Generic macro to get a register value from the KMP meter.
+ * @brief Generic macro to get a register value.
  *
  * This macro automatically selects the correct getter function based on the type of
  * the 'value' pointer. It is recommended to use this macro instead of calling
  * the individual getter functions directly.
  *
- * @param client Pointer to the kmp_client_t structure.
- * @param register_id The ID of the register to retrieve.
+ * @param reg Pointer to the register to retrieve value from.
  * @param value Pointer to store the retrieved value.
  */
-#define kmp_client_get_register(client, register_id, value)                                                           \
-    _Generic((value),                                                                                                  \
-        uint32_t *: kmp_client_get_register_uint32,                                                                    \
-        int32_t *: kmp_client_get_register_int32,                                                                      \
-        float *: kmp_client_get_register_float)((client), (register_id), (value))
+#define kmp_get_register_value(reg, value)                                                                         _Generic((value),                                                                                                          uint32_t *: kmp_get_register_value_uint32,                                                                             int32_t *: kmp_get_register_value_int32,                                                                               float *: kmp_get_register_value_float)((reg), (value))
 
 ///////////////////////////////////////////////////////////////////////////////
 //TYPES
@@ -46,6 +41,15 @@ typedef struct
     uint8_t meter_type[2];
     uint8_t software_revision[2];
 } kmp_meter_type_t;
+
+typedef struct
+{
+    uint16_t id;
+    uint8_t unit;
+    uint8_t si_ex;
+    uint8_t length;
+    uint8_t value[4];
+} kmp_register_t;
 
 typedef enum
 {
@@ -208,7 +212,6 @@ void kmp_client_init(kmp_client_t *client, uart_port_t port, int rx_pin, int tx_
 /**
  * @brief Gets the serial number of the KMP meter.
  *
- *
  * @param client Pointer to the kmp_client_t structure.
  * @param serial Pointer to store the retrieved serial number.
  * @return esp_err_t Error code of the operation.
@@ -225,40 +228,42 @@ esp_err_t kmp_client_get_serial(kmp_client_t *client, uint32_t *serial);
 esp_err_t kmp_client_get_type(kmp_client_t *client, kmp_meter_type_t *type);
 
 /**
- * @brief Gets a 32-bit unsigned register value from the KMP meter.
- *
- *  It's recommended to use the 'kmp_client_get_register' macro
- *  instead of calling this getter directly.
+ * @brief Gets a list of registers.
  *
  * @param client Pointer to the kmp_client_t structure.
- * @param register_id The ID of the register to retrieve.
- * @param value Pointer to store the retrieved register value.
+ * @param register_ids Array of register IDs to fetch.
+ * @param length Number of register IDs to fetch.
+ * @param registers Array of kmp_register_t structures to fill.
  * @return esp_err_t Error code of the operation.
  */
-esp_err_t kmp_client_get_register_uint32(kmp_client_t *client, kmp_register_id_t register_id, uint32_t *value);
+esp_err_t kmp_client_get_registers(kmp_client_t *client,
+                                   const kmp_register_id_t *register_ids,
+                                   size_t length,
+                                   kmp_register_t *registers);
 
 /**
- * @brief Gets a 32-bit signed register value from the KMP meter.
+ * @brief Gets the value of a register as a uint32_t.
  *
- *  It's recommended to use the 'kmp_client_get_register' macro
- *  instead of calling this getter directly.
- *
- * @param client Pointer to the kmp_client_t structure.
- * @param register_id The ID of the register to retrieve.
- * @param value Pointer to store the retrieved register value.
- * @return esp_err_t Error code of the operation.
+ * @param reg Pointer to the kmp_register_t structure.
+ * @param value Pointer to store the retrieved uint32_t value.
+ * @return true if successful, false otherwise.
  */
-esp_err_t kmp_client_get_register_int32(kmp_client_t *client, kmp_register_id_t register_id, int32_t *value);
+bool kmp_get_register_value_uint32(const kmp_register_t *reg, uint32_t *value);
 
 /**
- * @brief Gets a float register value from the KMP meter.
+ * @brief Gets the value of a register as an int32_t.
  *
- *  It's recommended to use the 'kmp_client_get_register' macro
- *  instead of calling this getter directly.
- *
- * @param client Pointer to the kmp_client_t structure.
- * @param register_id The ID of the register to retrieve.
- * @param value Pointer to store the retrieved register value.
- * @return esp_err_t Error code of the operation.
+ * @param reg Pointer to the kmp_register_t structure.
+ * @param value Pointer to store the retrieved int32_t value.
+ * @return true if successful, false otherwise.
  */
-esp_err_t kmp_client_get_register_float(kmp_client_t *client, kmp_register_id_t register_id, float *value);
+bool kmp_get_register_value_int32(const kmp_register_t *reg, int32_t *value);
+
+/**
+ * @brief Gets the value of a register as a float.
+ *
+ * @param reg Pointer to the kmp_register_t structure.
+ * @param value Pointer to store the retrieved float value.
+ * @return true if successful, false otherwise.
+ */
+bool kmp_get_register_value_float(const kmp_register_t *reg, float *value);

@@ -19,8 +19,10 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #define RX_TIMEOUT_MS 1000
-#define SERIAL_LENGTH 8
 
+#define KMP_MAX_REGISTERS 8
+#define KMP_REGISTER_MAX_RESPONSE_SIZE 9
+#define KMP_FRAME_BUFFER_SIZE 128
 #define KMP_SI_SIGN 0x80
 #define KMP_SI_EXPONENT 0x3F
 #define KMP_SI_DECIMAL 0x40
@@ -36,15 +38,6 @@ typedef enum
     KMP_CID_GET_REGISTER = 0x10,
     KMP_CID_PUT_REGISTER = 0x11,
 } kmp_cid_t;
-
-typedef struct
-{
-    uint16_t id;
-    uint8_t unit;
-    uint8_t si_ex;
-    uint8_t length;
-    uint8_t value[8];
-} kmp_register_t;
 
 typedef struct
 {
@@ -206,10 +199,6 @@ const kmp_register_info_t register_info_table[] = {
 ///////////////////////////////////////////////////////////////////////////////
 
 static esp_err_t parse_register(const uint8_t *data, size_t data_length, kmp_register_t *reg, size_t *consumed);
-static esp_err_t read_register(kmp_client_t *client, kmp_register_id_t register_id, kmp_register_t *reg);
-static bool register_to_uint32(const kmp_register_t *reg, uint32_t *value);
-static bool register_to_int32(const kmp_register_t *reg, int32_t *value);
-static bool register_to_float(const kmp_register_t *reg, float *value);
 static bool get_register_info(kmp_register_id_t register_id, kmp_register_info_t *register_info);
 static bool send_request(kmp_client_t *client,
                          const uint8_t *request,
@@ -304,54 +293,214 @@ esp_err_t kmp_client_get_type(kmp_client_t *client, kmp_meter_type_t *type)
     return ESP_OK;
 }
 
-esp_err_t kmp_client_get_register_uint32(kmp_client_t *client, kmp_register_id_t register_id, uint32_t *value)
+esp_err_t kmp_client_get_registers(kmp_client_t *client,
+                                   const kmp_register_id_t *register_ids,
+                                   size_t length,
+                                   kmp_register_t *registers)
 {
     assert(client != NULL);
-    assert(value != NULL);
+    assert(registers != NULL);
+    assert(register_ids != NULL);
 
-    kmp_register_t reg;
-    esp_err_t status = read_register(client, register_id, &reg);
-
-    if (status != ESP_OK)
+    if (length == 0)
     {
-        return status;
+        ESP_LOGE(TAG, "No register IDs specified");
+        return ESP_ERR_INVALID_ARG;
     }
 
-    return register_to_uint32(&reg, value) ? ESP_OK : ESP_FAIL;
+    if (length > KMP_MAX_REGISTERS)
+    {
+        ESP_LOGE(TAG, "Too many register IDs (%zu), max %u", length, KMP_MAX_REGISTERS);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // CID + Length byte + registers
+    const size_t request_length = 2 + (length * 2);
+    uint8_t request[request_length];
+    request[0] = KMP_CID_GET_REGISTER;
+    request[1] = (uint8_t)length;
+
+    for (size_t i = 0; i < length; ++i)
+    {
+        kmp_register_info_t register_info;
+        if (!get_register_info(register_ids[i], &register_info))
+        {
+            ESP_LOGE(TAG, "Invalid register ID (%u)", (uint32_t)register_ids[i]);
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        const size_t offset = 2 + (i * 2);
+        request[offset] = (uint8_t)(register_info.id >> 8);
+        request[offset + 1] = (uint8_t)(register_info.id & 0xFF);
+    }
+
+    const size_t max_response_length = 2 + (KMP_REGISTER_MAX_RESPONSE_SIZE * length);
+    uint8_t response[max_response_length];
+    size_t response_length = 0;
+    if (!send_request(client, request, sizeof(request), response, sizeof(response), &response_length))
+    {
+        ESP_LOGE(TAG, "GET_REGISTER request failed");
+        return ESP_FAIL;
+    }
+
+    // Destination address + CID
+    if (response_length < 2)
+    {
+        ESP_LOGE(TAG, "Invalid GET_REGISTER response length: %zu", response_length);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    if (response[0] != HEAT_METER || response[1] != KMP_CID_GET_REGISTER)
+    {
+        ESP_LOGE(TAG, "Unexpected GET_REGISTER response: dst=%u, cid=%u", response[0], response[1]);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    size_t offset = 2;
+    for (size_t i = 0; i < length; ++i)
+    {
+        kmp_register_info_t register_info;
+        if (!get_register_info(register_ids[i], &register_info))
+        {
+            ESP_LOGE(TAG, "Invalid register ID (%u)", (uint32_t)register_ids[i]);
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        size_t consumed = 0;
+        esp_err_t status = parse_register(&response[offset], response_length - 2, &registers[i], &consumed);
+        if (status != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to parse register '%s' (%u) at index %zu", register_info.name, register_info.id, i);
+            return status;
+        }
+
+        if (registers[i].id != register_info.id)
+        {
+            ESP_LOGE(TAG, "Unexpected register ID: expected=%u actual=%u", register_info.id, registers[i].id);
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+
+        offset += consumed;
+    }
+
+    if (offset != response_length)
+    {
+        ESP_LOGE(TAG, "Unexpected data after registers: %zu bytes", response_length - offset);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    return ESP_OK;
 }
 
-esp_err_t kmp_client_get_register_int32(kmp_client_t *client, kmp_register_id_t register_id, int32_t *value)
+bool kmp_get_register_value_uint32(const kmp_register_t *reg, uint32_t *value)
 {
-    assert(client != NULL);
+    assert(reg != NULL);
     assert(value != NULL);
 
-    kmp_register_t reg;
-    esp_err_t status = read_register(client, register_id, &reg);
-
-    if (status != ESP_OK)
+    if (reg->length == 0 || reg->length > sizeof(uint32_t))
     {
-        return status;
+        ESP_LOGE(TAG, "Invalid value length: %u", reg->length);
+        return false;
     }
 
-    return register_to_int32(&reg, value) ? ESP_OK : ESP_FAIL;
+    uint32_t raw = 0;
+    for (size_t i = 0; i < reg->length; ++i)
+    {
+        raw = (raw << 8) | (uint32_t)reg->value[i];
+    }
+    *value = raw;
+
+    return true;
 }
 
-esp_err_t kmp_client_get_register_float(kmp_client_t *client, kmp_register_id_t register_id, float *value)
+bool kmp_get_register_value_int32(const kmp_register_t *reg, int32_t *value)
 {
-    assert(client != NULL);
+    assert(reg != NULL);
     assert(value != NULL);
 
-    kmp_register_t reg;
-    esp_err_t status = read_register(client, register_id, &reg);
-
-    if (status != ESP_OK)
+    uint32_t raw;
+    if (!kmp_get_register_value_uint32(reg, &raw))
     {
-        return status;
+        return false;
     }
 
-    return register_to_float(&reg, value) ? ESP_OK : ESP_FAIL;
+    const bool is_negative = (reg->si_ex & KMP_SI_SIGN) != 0;
+    if (is_negative)
+    {
+        /*
+         * -INT32_MAX is representable, but INT32_MIN needs
+         * special handling because its magnitude is 2147483648.
+         */
+        if (raw > (uint32_t)INT32_MAX + 1U)
+        {
+            ESP_LOGE(TAG, "Register value to large for int32");
+            return false;
+        }
+
+        if (raw == (uint32_t)INT32_MAX + 1U)
+        {
+            *value = INT32_MIN;
+        }
+        else
+        {
+            *value = -(int32_t)raw;
+        }
+    }
+    else
+    {
+        if (raw > (uint32_t)INT32_MAX)
+        {
+            ESP_LOGE(TAG, "Register value to large for int32");
+            return false;
+        }
+
+        *value = (int32_t)raw;
+    }
+
+    return true;
 }
 
+bool kmp_get_register_value_float(const kmp_register_t *reg, float *value)
+{
+    assert(reg != NULL);
+    assert(value != NULL);
+
+    uint32_t raw;
+    if (!kmp_get_register_value_uint32(reg, &raw))
+    {
+        return false;
+    }
+
+    const bool is_negative = (reg->si_ex & KMP_SI_SIGN) != 0;
+    const bool is_decimal = (reg->si_ex & KMP_SI_DECIMAL) != 0;
+    const uint8_t exponent = reg->si_ex & KMP_SI_EXPONENT;
+
+    const float factor = pow10f((float)exponent);
+
+    float result = (float)raw;
+
+    if (is_decimal)
+    {
+        result /= factor;
+    }
+    else
+    {
+        result *= factor;
+    }
+
+    if (is_negative)
+    {
+        result = -result;
+    }
+
+    if (!isfinite(result))
+    {
+        return false;
+    }
+
+    *value = result;
+
+    return true;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //LOCAL FUNCTIONS
@@ -394,156 +543,6 @@ static esp_err_t parse_register(const uint8_t *data, size_t data_length, kmp_reg
     return ESP_OK;
 }
 
-static esp_err_t read_register(kmp_client_t *client, kmp_register_id_t register_id, kmp_register_t *reg)
-{
-    assert(client != NULL);
-    assert(reg != NULL);
-
-    kmp_register_info_t register_info;
-    if (!get_register_info(register_id, &register_info))
-    {
-        ESP_LOGE(TAG, "Invalid register ID (%u)", (uint32_t)register_id);
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    const uint8_t request[] = {
-        KMP_CID_GET_REGISTER, 1, (uint8_t)(register_info.id >> 8), (uint8_t)(register_info.id & 0xFF)};
-    uint8_t response[32];
-    size_t response_length = 0;
-    if (!send_request(client, request, sizeof(request), response, sizeof(response), &response_length))
-    {
-        ESP_LOGE(TAG, "GET_REGISTER request failed: reg=%s(%u)", register_info.name, register_info.id);
-        return ESP_FAIL;
-    }
-
-    // Destination address + CID
-    if (response_length < 2)
-    {
-        ESP_LOGE(TAG, "Invalid GET_REGISTER response length: %zu", response_length);
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-
-    if (response[0] != HEAT_METER || response[1] != KMP_CID_GET_REGISTER)
-    {
-        ESP_LOGE(TAG, "Unexpected GET_REGISTER response: dst=%u, cid=%u", response[0], response[1]);
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-
-    size_t consumed;
-    return parse_register(&response[2], response_length - 2, reg, &consumed);
-}
-
-static bool register_to_uint32(const kmp_register_t *reg, uint32_t *value)
-{
-    assert(reg != NULL);
-    assert(value != NULL);
-
-    if (reg->length == 0 || reg->length > sizeof(uint32_t))
-    {
-        ESP_LOGE(TAG, "Invalid value length: %u", reg->length);
-        return false;
-    }
-
-    uint32_t raw = 0;
-    for (size_t i = 0; i < reg->length; ++i)
-    {
-        raw = (raw << 8) | (uint32_t)reg->value[i];
-    }
-    *value = raw;
-
-    return true;
-}
-
-static bool register_to_int32(const kmp_register_t *reg, int32_t *value)
-{
-    assert(reg != NULL);
-    assert(value != NULL);
-
-    uint32_t raw;
-    if (!register_to_uint32(reg, &raw))
-    {
-        return false;
-    }
-
-    const bool is_negative = (reg->si_ex & KMP_SI_SIGN) != 0;
-    if (is_negative)
-    {
-        /*
-         * -INT32_MAX is representable, but INT32_MIN needs
-         * special handling because its magnitude is 2147483648.
-         */
-        if (raw > (uint32_t)INT32_MAX + 1U)
-        {
-            ESP_LOGE(TAG, "Register value to large for int32");
-            return false;
-        }
-
-        if (raw == (uint32_t)INT32_MAX + 1U)
-        {
-            *value = INT32_MIN;
-        }
-        else
-        {
-            *value = -(int32_t)raw;
-        }
-    }
-    else
-    {
-        if (raw > (uint32_t)INT32_MAX)
-        {
-            ESP_LOGE(TAG, "Register value to large for int32");
-            return false;
-        }
-
-        *value = (int32_t)raw;
-    }
-
-    return true;
-}
-
-static bool register_to_float(const kmp_register_t *reg, float *value)
-{
-    assert(reg != NULL);
-    assert(value != NULL);
-
-    uint32_t raw;
-    if (!register_to_uint32(reg, &raw))
-    {
-        return false;
-    }
-
-    const bool is_negative = (reg->si_ex & KMP_SI_SIGN) != 0;
-    const bool is_decimal = (reg->si_ex & KMP_SI_DECIMAL) != 0;
-    const uint8_t exponent = reg->si_ex & KMP_SI_EXPONENT;
-
-    const float factor = pow10f((float)exponent);
-
-    float result = (float)raw;
-
-    if (is_decimal)
-    {
-        result /= factor;
-    }
-    else
-    {
-        result *= factor;
-    }
-
-    if (is_negative)
-    {
-        result = -result;
-    }
-
-    if (!isfinite(result))
-    {
-        return false;
-    }
-
-    *value = result;
-
-    return true;
-}
-
 static bool get_register_info(kmp_register_id_t register_id, kmp_register_info_t *register_info)
 {
     assert(register_info != NULL);
@@ -570,9 +569,9 @@ static bool send_request(kmp_client_t *client,
     assert(response != NULL);
     assert(response_length != NULL);
 
-    uint8_t encode_buffer[16];
+    uint8_t frame_buffer[KMP_FRAME_BUFFER_SIZE];
     size_t encoded_length = 0;
-    if (kmp_frame_encode(HEAT_METER, request, length, encode_buffer, sizeof(encode_buffer), &encoded_length) !=
+    if (kmp_frame_encode(HEAT_METER, request, length, frame_buffer, sizeof(frame_buffer), &encoded_length) !=
         KMP_ENCODE_OK)
     {
         ESP_LOGE(TAG, "Failed to encode KMP frame");
@@ -580,15 +579,14 @@ static bool send_request(kmp_client_t *client,
     }
 
     if (kmp_uart_flush(&client->uart) != ESP_OK ||
-        kmp_uart_write(&client->uart, encode_buffer, encoded_length) != ESP_OK)
+        kmp_uart_write(&client->uart, frame_buffer, encoded_length) != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to write KMP frame");
         return false;
     }
 
-    uint8_t rx_buffer[16];
     size_t received_bytes = 0;
-    if (kmp_uart_read(&client->uart, rx_buffer, sizeof(rx_buffer), &received_bytes, RX_TIMEOUT_MS) != ESP_OK ||
+    if (kmp_uart_read(&client->uart, frame_buffer, sizeof(frame_buffer), &received_bytes, RX_TIMEOUT_MS) != ESP_OK ||
         received_bytes == 0)
     {
         ESP_LOGE(TAG, "Failed to read KMP response");
@@ -599,16 +597,17 @@ static bool send_request(kmp_client_t *client,
     ESP_LOGD(TAG, "Response (%zu bytes): ", received_bytes);
     for (size_t i = 0; i < received_bytes; i++)
     {
-        ESP_LOGD(TAG, "0x%02X ", rx_buffer[i]);
+        ESP_LOGD(TAG, "0x%02X ", frame_buffer[i]);
     }
 #endif
 
     size_t consumed = 0;
-    kmp_parse_result_t result = kmp_parser_process(&client->parser, rx_buffer, received_bytes, &consumed);
+    kmp_parse_result_t result = kmp_parser_process(&client->parser, frame_buffer, received_bytes, &consumed);
 
     if (result != KMP_PARSE_FRAME_READY)
     {
-        ESP_LOGE(TAG, "Failed to parse KMP response");
+        ESP_LOGE(
+            TAG, "Failed to parse KMP response: result=%d consumed=%zu received=%zu", result, consumed, received_bytes);
         return false;
     }
 
