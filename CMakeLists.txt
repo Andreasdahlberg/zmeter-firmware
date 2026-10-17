@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.22)
 set(EXTRA_COMPONENT_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/components/button_driver
     ${CMAKE_CURRENT_SOURCE_DIR}/components/kmp
+    ${CMAKE_CURRENT_SOURCE_DIR}/components/heat_meter
     )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
