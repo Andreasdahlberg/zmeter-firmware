@@ -3,6 +3,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #include <assert.h>
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -82,7 +83,12 @@ esp_err_t heat_meter_get_serial(const heat_meter_t *meter, char *serial, size_t 
     }
 
     const int result = snprintf(serial, capacity, "%" PRIu32, meter->serial);
-    if (result >= capacity)
+    if (result < 0)
+    {
+        ESP_LOGE(TAG, "Failed to format meter serial");
+        return ESP_FAIL;
+    }
+    if ((size_t)result >= capacity)
     {
         ESP_LOGE(TAG, "Meter serial was truncated (%s)", serial);
         return ESP_ERR_INVALID_SIZE;
