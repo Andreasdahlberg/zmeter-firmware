@@ -96,13 +96,14 @@ void zigbee_meter_init(void)
 
 void zigbee_meter_data_handler(const struct meter_data_t *data)
 {
+    assert(data != NULL);
+
     ESP_LOGI(TAG,
-             "Received meter data: energy=%.2f, volume=%.2f, inlet_temperature=%.2f, outlet_temperature=%.2f, valid=%d",
+             "Received meter data: energy=%.2f, volume=%.2f, inlet_temperature=%.2f, outlet_temperature=%.2f",
              data->energy,
              data->volume,
              data->inlet_temperature,
-             data->outlet_temperature,
-             data->valid);
+             data->outlet_temperature);
 
     if (!zigbee_meter.initialized)
     {

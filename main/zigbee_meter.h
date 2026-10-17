@@ -9,7 +9,6 @@
 //DEFINES
 //////////////////////////////////////////////////////////////////////////
 
-// MOVE from this file!
 struct meter_data_t
 {
     float energy;
@@ -19,7 +18,6 @@ struct meter_data_t
     float inlet_temperature;
     float outlet_temperature;
     char serial[9];
-    bool valid;
 };
 
 /**
