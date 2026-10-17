@@ -25,6 +25,9 @@
  */
 #define kmp_get_register_value(reg, value)                                                                         _Generic((value),                                                                                                          uint32_t *: kmp_get_register_value_uint32,                                                                             int32_t *: kmp_get_register_value_int32,                                                                               float *: kmp_get_register_value_float)((reg), (value))
 
+#define KMP_MAX_REGISTERS 8
+#define KMP_MAX_FRAME_SIZE (2 + (KMP_MAX_REGISTERS * 9) + 8)
+
 ///////////////////////////////////////////////////////////////////////////////
 //TYPES
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,7 +36,7 @@ typedef struct
 {
     kmp_uart_t uart;
     kmp_parser_t parser;
-    uint8_t parse_buffer[32];
+    uint8_t parse_buffer[KMP_MAX_FRAME_SIZE];
 } kmp_client_t;
 
 typedef struct
