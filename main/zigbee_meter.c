@@ -80,7 +80,7 @@ static int32_t clamp_to_s24(int32_t value);
 //FUNCTIONS
 //////////////////////////////////////////////////////////////////////////
 
-void zigbee_meter_init(void)
+void zigbee_meter_start(void)
 {
     zigbee_meter = (typeof(zigbee_meter)){.initialized = false};
 
