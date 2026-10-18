@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include "esp_err.h"
+
 ///////////////////////////////////////////////////////////////////////////////
 //INCLUDES
 ///////////////////////////////////////////////////////////////////////////////
@@ -29,12 +31,17 @@ struct meter_data_t
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * @brief Initializes the Zigbee meter module.
+ * @brief Starts the Zigbee meter module.
  *
  * Sets up the necessary resources, peripherals, and internal states
  * required for the Zigbee meter functionality.
+ *
+ * @return ESP_OK on success, or an error if Zigbee startup fails.
  */
-void zigbee_meter_start(void);
+esp_err_t zigbee_meter_start(void);
+
+/** Blocks the calling task until the Zigbee stack has started. */
+void zigbee_meter_wait_until_ready(void);
 
 /**
  * @brief Handler for heat meter data.

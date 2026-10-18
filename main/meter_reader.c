@@ -44,6 +44,8 @@ static void meter_reader_task(void *pvParameters __attribute__((unused)))
         vTaskDelay(pdMS_TO_TICKS(METER_INIT_RETRY_INTERVAL_MS));
     }
 
+    zigbee_meter_wait_until_ready();
+
     while (1)
     {
         struct meter_data_t meter_data = {0};

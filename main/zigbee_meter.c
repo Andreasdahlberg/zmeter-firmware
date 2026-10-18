@@ -12,6 +12,8 @@
 #include "esp_check.h"
 #include "esp_log.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/task.h"
 
 #include "nwk/esp_zigbee_nwk.h"
@@ -33,6 +35,7 @@
 #define HA_ESP_HEATING_ENDPOINT 10
 #define ESP_ZB_PRIMARY_CHANNEL_MASK ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK
 #define ZB_INIT_RETRY_PERIOD 2000
+#define ZIGBEE_READY_BIT ((EventBits_t)1U)
 
 #define MANUFACTURER_NAME                                                                                              \
     "\x08"                                                                                                             \
@@ -45,17 +48,13 @@
 //TYPES
 ///////////////////////////////////////////////////////////////////////////////
 
-struct zigbee_meter_t
-{
-    bool initialized;
-};
-
 //////////////////////////////////////////////////////////////////////////
 //VARIABLES
 //////////////////////////////////////////////////////////////////////////
 
 static const char *TAG = "ESP_ZB_HEAT";
-static struct zigbee_meter_t zigbee_meter;
+static StaticEventGroup_t zigbee_ready_event_storage;
+static EventGroupHandle_t zigbee_ready_events;
 
 //////////////////////////////////////////////////////////////////////////
 //LOCAL FUNCTION PROTOTYPES
@@ -80,18 +79,38 @@ static int32_t clamp_to_s24(int32_t value);
 //FUNCTIONS
 //////////////////////////////////////////////////////////////////////////
 
-void zigbee_meter_start(void)
+esp_err_t zigbee_meter_start(void)
 {
-    zigbee_meter = (typeof(zigbee_meter)){.initialized = false};
+    zigbee_ready_events = xEventGroupCreateStatic(&zigbee_ready_event_storage);
+    if (zigbee_ready_events == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    xEventGroupClearBits(zigbee_ready_events, ZIGBEE_READY_BIT);
 
     esp_zb_platform_config_t config = {
         .radio_config = {.radio_mode = ZB_RADIO_MODE_NATIVE},
         .host_config = {.host_connection_mode = ZB_HOST_CONNECTION_MODE_NONE},
     };
-    ESP_ERROR_CHECK(esp_zb_platform_config(&config));
+    esp_err_t status = esp_zb_platform_config(&config);
+    if (status != ESP_OK)
+    {
+        return status;
+    }
 
     ESP_LOGI(TAG, "Starting Zigbee task...");
-    xTaskCreate(meter_task, "Zigbee_main", 4096, NULL, 4, NULL);
+    if (xTaskCreate(meter_task, "Zigbee_main", 4096, NULL, 4, NULL) != pdPASS)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
+}
+
+void zigbee_meter_wait_until_ready(void)
+{
+    assert(zigbee_ready_events != NULL);
+    xEventGroupWaitBits(zigbee_ready_events, ZIGBEE_READY_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
 }
 
 void zigbee_meter_data_handler(const struct meter_data_t *data)
@@ -105,7 +124,7 @@ void zigbee_meter_data_handler(const struct meter_data_t *data)
              data->inlet_temperature,
              data->outlet_temperature);
 
-    if (!zigbee_meter.initialized)
+    if (zigbee_ready_events == NULL || (xEventGroupGetBits(zigbee_ready_events) & ZIGBEE_READY_BIT) == 0)
     {
         return;
     }
@@ -117,7 +136,12 @@ void zigbee_meter_data_handler(const struct meter_data_t *data)
     uint8_t serial[9];
     make_pascal_string(serial, sizeof(serial), data->serial);
 
-    esp_zb_lock_acquire(portMAX_DELAY);
+    // TODO: We don't want to wait forever
+    if (!esp_zb_lock_acquire(portMAX_DELAY))
+    {
+        ESP_LOGE(TAG, "Failed to acquire Zigbee lock");
+        return;
+    }
     esp_zb_zcl_set_attribute_val(HA_ESP_HEATING_ENDPOINT,
                                  ESP_ZB_ZCL_CLUSTER_ID_METERING,
                                  ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
@@ -163,7 +187,7 @@ static void meter_task(void *pvParameters __attribute__((unused)))
     init_zigbee_stack();
 
     ESP_ERROR_CHECK(esp_zb_start(false));
-    zigbee_meter.initialized = true;
+    xEventGroupSetBits(zigbee_ready_events, ZIGBEE_READY_BIT);
     esp_zb_stack_main_loop();
 
     ESP_LOGE(TAG, "Zigbee main loop exited unexpectedly");
