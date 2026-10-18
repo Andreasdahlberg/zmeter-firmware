@@ -46,7 +46,7 @@ typedef struct
  * @param port The UART port to use for communication.
  * @param rx_pin The RX pin number.
  * @param tx_pin The TX pin number.
- * @return esp_err_t ESP_OK on success, or an error code on failure.
+ * @return ESP_OK on success. On failure, resources are released and initialization may be retried.
  */
 esp_err_t heat_meter_init(heat_meter_t *meter, uart_port_t port, int rx_pin, int tx_pin);
 

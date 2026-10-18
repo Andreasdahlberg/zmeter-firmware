@@ -58,16 +58,22 @@ esp_err_t heat_meter_init(heat_meter_t *meter, uart_port_t port, int rx_pin, int
     assert(meter != NULL);
     *meter = (typeof(*meter)){0};
 
-    kmp_client_init(&meter->kmp, port, rx_pin, tx_pin);
-
-    esp_err_t status = kmp_client_get_serial(&meter->kmp, &meter->serial);
+    esp_err_t status = kmp_client_init(&meter->kmp, port, rx_pin, tx_pin);
     if (status != ESP_OK)
     {
+        return status;
+    }
+
+    status = kmp_client_get_serial(&meter->kmp, &meter->serial);
+    if (status != ESP_OK)
+    {
+        kmp_client_deinit(&meter->kmp);
+        *meter = (typeof(*meter)){0};
         ESP_LOGE(TAG, "Failed to read meter serial number");
         return status;
     }
 
-    ESP_LOGI(TAG, "Meter initialized(%u)", meter->serial);
+    ESP_LOGI(TAG, "Meter initialized(%" PRIu32 ")", meter->serial);
     return ESP_OK;
 }
 

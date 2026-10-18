@@ -211,16 +211,29 @@ static bool send_request(kmp_client_t *client,
 //FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////
 
-void kmp_client_init(kmp_client_t *client, uart_port_t port, int rx_pin, int tx_pin)
+esp_err_t kmp_client_init(kmp_client_t *client, uart_port_t port, int rx_pin, int tx_pin)
 {
     assert(client != NULL);
     *client = (kmp_client_t){0};
 
     const kmp_uart_config_t uart_config = {.port = port, .rx_buffer_size = 256, .rx_pin = rx_pin, .tx_pin = tx_pin};
-    ESP_ERROR_CHECK(kmp_uart_init(&uart_config, &client->uart));
+    esp_err_t status = kmp_uart_init(&uart_config, &client->uart);
+    if (status != ESP_OK)
+    {
+        return status;
+    }
+
     ESP_LOGI(TAG, "port=%d, rx=%d, tx=%d", port, rx_pin, tx_pin);
 
     kmp_parser_init(&client->parser, client->parse_buffer, sizeof(client->parse_buffer));
+    return ESP_OK;
+}
+
+void kmp_client_deinit(kmp_client_t *client)
+{
+    assert(client != NULL);
+    kmp_uart_deinit(&client->uart);
+    *client = (kmp_client_t){0};
 }
 
 esp_err_t kmp_client_get_serial(kmp_client_t *client, uint32_t *serial)
@@ -473,7 +486,7 @@ bool kmp_get_register_value_float(const kmp_register_t *reg, float *value)
     const bool is_decimal = (reg->si_ex & KMP_SI_DECIMAL) != 0;
     const uint8_t exponent = reg->si_ex & KMP_SI_EXPONENT;
 
-    const float factor = pow10f((float)exponent);
+    const float factor = powf(10.0f, (float)exponent);
 
     float result = (float)raw;
 
@@ -529,7 +542,7 @@ static esp_err_t parse_register(const uint8_t *data, size_t data_length, kmp_reg
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    if (data_length < 5 + reg->length)
+    if (data_length < (size_t)5 + reg->length)
     {
         ESP_LOGE(TAG, "Register %u value truncated: expected=%u available=%zu", reg->id, reg->length, data_length - 5);
         return ESP_ERR_INVALID_RESPONSE;

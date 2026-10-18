@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include "driver/uart.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -11,6 +12,7 @@
 typedef struct kmp_uart
 {
     uart_port_t port;
+    bool initialized;
 } kmp_uart_t;
 
 /**

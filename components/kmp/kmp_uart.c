@@ -34,6 +34,7 @@ esp_err_t kmp_uart_init(const kmp_uart_config_t *config, kmp_uart_t *handle)
     if (status != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to install UART driver: %s", esp_err_to_name(status));
+        *handle = (kmp_uart_t){};
         return status;
     }
 
@@ -42,6 +43,7 @@ esp_err_t kmp_uart_init(const kmp_uart_config_t *config, kmp_uart_t *handle)
     {
         ESP_LOGE(TAG, "Failed to configure UART: %s", esp_err_to_name(status));
         uart_driver_delete(handle->port);
+        *handle = (kmp_uart_t){};
         return status;
     }
 
@@ -50,9 +52,11 @@ esp_err_t kmp_uart_init(const kmp_uart_config_t *config, kmp_uart_t *handle)
     {
         ESP_LOGE(TAG, "Failed to configure UART pins: %s", esp_err_to_name(status));
         uart_driver_delete(handle->port);
+        *handle = (kmp_uart_t){};
         return status;
     }
 
+    handle->initialized = true;
     ESP_LOGI(TAG, "UART successfully initialized");
     return ESP_OK;
 }
@@ -60,7 +64,10 @@ esp_err_t kmp_uart_init(const kmp_uart_config_t *config, kmp_uart_t *handle)
 void kmp_uart_deinit(kmp_uart_t *handle)
 {
     assert(handle != NULL);
-    uart_driver_delete(handle->port);
+    if (handle->initialized)
+    {
+        uart_driver_delete(handle->port);
+    }
     *handle = (kmp_uart_t){};
 }
 

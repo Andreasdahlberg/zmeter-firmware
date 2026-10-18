@@ -23,7 +23,11 @@
  * @param reg Pointer to the register to retrieve value from.
  * @param value Pointer to store the retrieved value.
  */
-#define kmp_get_register_value(reg, value)                                                                         _Generic((value),                                                                                                          uint32_t *: kmp_get_register_value_uint32,                                                                             int32_t *: kmp_get_register_value_int32,                                                                               float *: kmp_get_register_value_float)((reg), (value))
+#define kmp_get_register_value(reg, value)                                                                             \
+    _Generic((value),                                                                                                  \
+        uint32_t *: kmp_get_register_value_uint32,                                                                     \
+        int32_t *: kmp_get_register_value_int32,                                                                       \
+        float *: kmp_get_register_value_float)((reg), (value))
 
 #define KMP_MAX_REGISTERS 8
 #define KMP_MAX_FRAME_SIZE (2 + (KMP_MAX_REGISTERS * 9) + 8)
@@ -209,8 +213,16 @@ typedef enum
  * @param port The UART port to use.
  * @param rx_pin The RX pin number.
  * @param tx_pin The TX pin number.
+ * @return ESP_OK on success. On failure, the client is left deinitialized and may be retried.
  */
-void kmp_client_init(kmp_client_t *client, uart_port_t port, int rx_pin, int tx_pin);
+esp_err_t kmp_client_init(kmp_client_t *client, uart_port_t port, int rx_pin, int tx_pin);
+
+/**
+ * @brief Releases UART resources owned by an initialized KMP client.
+ *
+ * @param client Pointer to the kmp_client_t structure.
+ */
+void kmp_client_deinit(kmp_client_t *client);
 
 /**
  * @brief Gets the serial number of the KMP meter.
